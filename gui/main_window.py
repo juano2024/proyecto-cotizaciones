@@ -1,6 +1,7 @@
 import os
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, 
-                             QLabel, QLineEdit, QComboBox, QPushButton, QMessageBox, QFileDialog)
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QFormLayout, QHBoxLayout, 
+                             QLabel, QLineEdit, QComboBox, QPushButton, QMessageBox, QFileDialog, QScrollArea)
+from PyQt6.QtCore import Qt
 from gui.styles import MAIN_STYLE
 from core.excel_manager import ExcelManager
 
@@ -12,9 +13,9 @@ class CotizacionesApp(QWidget):
         
     def initUI(self):
         self.setWindowTitle("Registro de Cotizaciones")
-        self.setFixedSize(400, 250)
+        self.resize(500, 700)
         
-        layout = QVBoxLayout()
+        main_layout = QVBoxLayout()
         
         # Archivo Excel actual
         texto_archivo = os.path.basename(self.excel_manager.excel_path) if self.excel_manager.excel_path else "Ninguno seleccionado"
@@ -28,50 +29,72 @@ class CotizacionesApp(QWidget):
         btn_cambiar_archivo.clicked.connect(self.cambiar_archivo)
         layout_archivo.addWidget(btn_cambiar_archivo)
         
-        layout.addLayout(layout_archivo)
+        main_layout.addLayout(layout_archivo)
+        main_layout.addSpacing(10)
         
-        # Separador visual
-        layout.addSpacing(10)
+        # Scroll Area para el formulario con los 18 campos
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll_content = QWidget()
+        form_layout = QFormLayout(scroll_content)
+        form_layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
         
-        # Nombre
-        layout_nombre = QHBoxLayout()
-        layout_nombre.addWidget(QLabel("Nombre del artículo:"))
-        self.input_nombre = QLineEdit()
-        layout_nombre.addWidget(self.input_nombre)
-        layout.addLayout(layout_nombre)
+        self.inputs = {}
+        self.field_names = [
+            ("FECHA DEL PEDIDO", "fecha_pedido"),
+            ("ORDEN DE COMPRA", "orden_compra"),
+            ("COTIZACIÓN", "cotizacion"),
+            ("ATENDIO", "atendio"),
+            ("USUARIO", "usuario"),
+            ("EMPRESA", "empresa"),
+            ("CANTIDAD", "cantidad"),
+            ("DESCRIPCIÓN DE LA MERCANCIA", "descripcion"),
+            ("PRECIO UNITARIO (USD)", "precio_unitario"),
+            ("PRECIO TOTAL", "precio_total"),
+            ("TIEMPO ESTIMADO DE LLEGADA", "tiempo_llegada"),
+            ("FECHA DE LLEGADA DEL PEDIDO", "fecha_llegada"),
+            ("EMPRESA DE TRANSPORTE", "transporte"),
+            ("No. DE GUIA", "guia"),
+            ("No. DU UPS", "ups"),
+            ("PREALERTADO", "prealertado"),
+            ("INVOICE", "invoice"),
+            ("POSICION ARANCELARIA", "posicion_arancelaria")
+        ]
         
-        # Precio
-        layout_precio = QHBoxLayout()
-        layout_precio.addWidget(QLabel("Precio estimado ($):"))
-        self.input_precio = QLineEdit()
-        layout_precio.addWidget(self.input_precio)
-        layout.addLayout(layout_precio)
+        for label, name in self.field_names:
+            widget = QLineEdit()
+            self.inputs[name] = widget
+            form_layout.addRow(QLabel(f"{label}:"), widget)
+            
+        # Conectar campos de cantidad y precio para autocalcular el total
+        self.inputs["cantidad"].textChanged.connect(self.calcular_total)
+        self.inputs["precio_unitario"].textChanged.connect(self.calcular_total)
+
+        scroll.setWidget(scroll_content)
+        main_layout.addWidget(scroll)
         
-        # Lugar
-        layout_lugar = QHBoxLayout()
-        layout_lugar.addWidget(QLabel("Lugar o Enlace:"))
-        self.input_lugar = QLineEdit()
-        layout_lugar.addWidget(self.input_lugar)
-        layout.addLayout(layout_lugar)
-        
-        # Categoría
-        layout_cat = QHBoxLayout()
-        layout_cat.addWidget(QLabel("Categoría:"))
-        self.combo_cat = QComboBox()
-        self.combo_cat.addItems(["Supplier", "Sales force"])
-        layout_cat.addWidget(self.combo_cat)
-        layout.addLayout(layout_cat)
-        
-        layout.addSpacing(15)
+        main_layout.addSpacing(15)
         
         # Botón Guardar
         btn_guardar = QPushButton("Guardar Cotización")
         btn_guardar.clicked.connect(self.guardar_cotizacion)
         btn_guardar.setStyleSheet(MAIN_STYLE)
-        layout.addWidget(btn_guardar)
+        main_layout.addWidget(btn_guardar)
         
-        self.setLayout(layout)
+        self.setLayout(main_layout)
         
+    def calcular_total(self):
+        try:
+            cantidad_str = self.inputs["cantidad"].text().replace(',', '.')
+            precio_str = self.inputs["precio_unitario"].text().replace(',', '.')
+            if cantidad_str and precio_str:
+                cantidad = float(cantidad_str)
+                precio = float(precio_str)
+                total = cantidad * precio
+                self.inputs["precio_total"].setText(f"{total:.2f}")
+        except ValueError:
+            pass # Si hay texto no numerico, no calculamos
+
     def cambiar_archivo(self):
         fname, _ = QFileDialog.getOpenFileName(self, 'Seleccionar archivo Excel', os.getcwd(), "Archivos Excel (*.xlsx *.xls)")
         if fname:
@@ -80,34 +103,30 @@ class CotizacionesApp(QWidget):
             
     def guardar_cotizacion(self):
         if not self.excel_manager.excel_path or not os.path.exists(self.excel_manager.excel_path):
-            QMessageBox.warning(self, "Archivo no seleccionado", "Por favor, selecciona un archivo Excel existente antes de guardar la cotización.")
+            QMessageBox.warning(self, "Archivo no seleccionado", "Por favor, selecciona un archivo Excel existente antes de guardar el registro.")
             return
 
-        nombre = self.input_nombre.text().strip()
-        precio_str = self.input_precio.text().strip()
-        lugar = self.input_lugar.text().strip()
-        categoria = self.combo_cat.currentText()
-        
-        if not nombre or not precio_str or not lugar:
-            QMessageBox.warning(self, "Campos Incompletos", "Por favor, completa todos los campos antes de guardar.")
+        # Recopilar todos los datos en el orden de las columnas del Excel
+        datos_guardar = []
+        for label, name in self.field_names:
+            widget = self.inputs[name]
+            texto = widget.text().strip()
+            datos_guardar.append(texto)
+            
+        # Comprobar que al menos haya agregado algun dato importante (e.g., descripcion o empresa)
+        if not any(datos_guardar):
+            QMessageBox.warning(self, "Campos Vacíos", "Por favor, completa al menos un campo antes de guardar.")
             return
             
         try:
-            precio = float(precio_str.replace(',', '.'))
-        except ValueError:
-            QMessageBox.warning(self, "Error de Formato", "El precio debe ser un número válido (ej. 1500.50).")
-            return
-            
-        try:
-            self.excel_manager.guardar_cotizacion(nombre, precio, lugar, categoria)
-            QMessageBox.information(self, "¡Guardado Exitoso!", f"La cotización de '{nombre}' ha sido registrada en el Excel.")
+            self.excel_manager.guardar_cotizacion(datos_guardar)
+            QMessageBox.information(self, "¡Guardado Exitoso!", "Los datos han sido registrados en el Excel correctamente.")
             
             # Limpiar campos para la siguiente entrada
-            self.input_nombre.clear()
-            self.input_precio.clear()
-            self.input_lugar.clear()
+            for _, name in self.field_names:
+                self.inputs[name].clear()
             
         except PermissionError:
-            QMessageBox.critical(self, "Archivo Abierto", f"El archivo Excel ({os.path.basename(self.excel_manager.excel_path)}) está abierto.\nPor favor, ciérralo antes de guardar una nueva cotización.")
+            QMessageBox.critical(self, "Archivo Abierto", f"El archivo Excel ({os.path.basename(self.excel_manager.excel_path)}) está abierto.\nPor favor, ciérralo antes de guardar.")
         except Exception as e:
             QMessageBox.critical(self, "Error al Guardar", f"No se pudo guardar la información en el Excel:\n{str(e)}")
