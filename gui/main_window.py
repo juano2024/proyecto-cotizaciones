@@ -55,10 +55,10 @@ class CotizacionesApp(QWidget):
             ("FECHA DE LLEGADA DEL PEDIDO", "fecha_llegada"),
             ("EMPRESA DE TRANSPORTE", "transporte"),
             ("No. DE GUIA", "guia"),
-            ("No. DU UPS", "ups"),
+            ("No. DE UPS", "ups"),
             ("PREALERTADO", "prealertado"),
             ("INVOICE", "invoice"),
-            ("POSICION ARANCELARIA", "posicion_arancelaria")
+            ("POSICIÓN ARANCELARIA", "posicion_arancelaria")
         ]
         
         for label, name in self.field_names:
